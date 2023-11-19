@@ -40,3 +40,28 @@ The "Crimes in Boston" dataset is a valuable tool for:
 * Public Safety Planning: Supports authorities in planning security measures.
 * Urban and Social Studies: Offers insights into urban and social dynamics related to crime.
 * Through this information, the dataset proves to be an important resource for researchers, data analysts, urban planners, and public safety policy makers, offering a comprehensive and essential view for understanding and addressing the challenges of urban crime in Boston.
+
+
+# The Analisis  
+In order to see the developed analysis on the dataset, we should clone the remote repository. A summary of the analysis performed can be summarized as:  
+*Data cleaning*  
+*EDA*  
+*Timeseries*  
+*Heatmaps*  
+*Clustering Analysis*  
+*Findings*     
+
+
+# License: 🔒   
+GNU License
+
+# Authors :woman: :man: :woman: :woman:   
+* Aurora Menegatto (aurora.menegatto@studenti.luiss.it)
+* Andrea Marcoccia (andrea.marcoccia@studenti.luiss.it)
+* Irene Fellin (irene.fellin@studenti.luiss.it)
+* Giulia Scalas (giulia.scalas@studenti.luiss.it)
+
+
+
+
+
