@@ -48,7 +48,8 @@ In order to see the developed analysis on the dataset, we should clone the remot
 *EDA*  
 *Timeseries*  
 *Heatmaps*  
-*Clustering Analysis*  
+
+
 *Findings*     
 
 
