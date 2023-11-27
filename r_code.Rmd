@@ -1,0 +1,363 @@
+---
+title: 'Boston Crimes Analysis'
+author: "Andrea Marcoccia, Aurora Menegatto, Irene Fellin, Giulia Scalas"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+The following is an analysis of the crimes in Boston (Massachusetts) from June 14, 2015 until September 3, 2018.   
+   
+The dataset is provided by the Boston Police Department (BPD) and contais *records* from the new crime incident report system, which includes a reduced set of fields focused on capturing the *type* of incident as well as *when* and *where* it occurred.
+
+We start the analysis by importing all the libraries that we need:
+```{r}
+library(dplyr)
+library(purrr)
+library(ggplot2)
+library(gridExtra)
+library(tidyr)
+```
+
+Let's import the CSV File:
+```{r}
+file_path_crimes <- './crime.csv'
+file_path_offense_codes <- './offense_codes.csv'
+
+crimes <- read.csv(file_path_crimes, fileEncoding = "ISO-8859-1")
+offense_codes <- read.csv(file_path_offense_codes, fileEncoding = "ISO-8859-1")
+
+head(crimes)
+```
+
+# Data Preparation
+
+The dataset is complemented by an additional dataset that provides a mapping between OFFENSE_CODE and their respective names.  
+
+We'll proceed by analyzing which crimes are in the second dataset.
+```{r}
+unique_codes <- unique(offense_codes$CODE)
+unique_offense_codes <- unique(crimes$OFFENSE_CODE)
+
+if (all(unique_offense_codes %in% unique_codes)) {
+  print("All values in 'unique_offense_codes' are present in 'unique_codes'.")
+} else {
+  print("Some values in 'unique_offense_codes' are not present in 'unique_codes'.")
+}
+```
+It can be denoted that 222 out of 425 possible crimes are in the dataset, so  we will just substitute the code of the crime with its name using the complementary dataset.
+
+```{r}
+code_name_df <- data.frame(code = unique_offense_codes)
+code_name_df <- left_join(code_name_df, offense_codes, by = c("code" = "CODE"))
+code_name_df <- code_name_df %>%
+  select(code, name = NAME)
+code_name_df <- code_name_df %>%
+  distinct(code, .keep_all = TRUE)
+
+crimes <- left_join(crimes, select(code_name_df, code, OFFENSE_NAME = name), by = c("OFFENSE_CODE" = "code"))
+
+head(crimes)
+```
+Now, 'crimes' contains a new column 'OFFENSE_NAME' with the corresponding names.
+
+We will now check the ***latitude*** and ***longitude*** values for the crimes within the graph. From the coordinates, it is possible to see the exact location where the crime was recorded.  
+
+The objective is to verify that all crimes were recorded in the Boston area and to identify possible wrong values
+```{r}
+summary(crimes$Lat)
+```
+```{r}
+summary(crimes$Long)
+```
+As we can see from the graph, the value 1/-1 is outside the range of Boston coordinates. 
+We continue by removing the values for both Lat and Long columns in order to better visualize the data and have a better analysis:
+```{r}
+crimes <- crimes %>%
+  filter((Lat != -1 | is.na(Lat)) & (Long != -1 | is.na(Long)))
+```
+
+Let's plot now boxplots to check outliers:
+```{r}
+p1 <- ggplot(crimes, aes(y = Lat)) +
+  geom_boxplot() +
+  theme_minimal() +
+  ggtitle("Boxplot of Latitude") +
+  theme(plot.title = element_text(size = 18))
+
+p2 <- ggplot(crimes, aes(y = Long)) +
+  geom_boxplot() +
+  theme_minimal() +
+  ggtitle("Boxplot of Longitude") +
+  theme(plot.title = element_text(size = 18))
+
+grid.arrange(p1, p2, ncol = 2)
+```
+Longitude has values that are apparently outliers. A further analysis through an heatmap has been done in Python in order to understand if these values are wrong values or not.
+They are not.
+```{r}
+missing_counts <- sapply(crimes, function(x) sum(is.na(x)))
+
+missing_counts
+```
+The analysis of missing values appear to be different from the one in python, this is due to the fact that some values are recognized as missing there and not in python and vice-versa.
+An example is shooting that there has '' instead of missing values.
+
+```{r}
+missing_counts_df <- data.frame(
+  Feature = names(missing_counts),
+  MissingCount = missing_counts
+)
+
+total_observations <- nrow(crimes)
+missing_counts_df <- missing_counts_df %>%
+  mutate(PercentageMissing = (MissingCount / total_observations) * 100)
+
+ggplot(missing_counts_df, aes(x = Feature, y = PercentageMissing)) +
+  geom_bar(stat = "identity", fill = "coral") +
+  theme_minimal() +
+  labs(title = "Percentage of Missing Values by Feature", x = "Feature", y = "Percentage Missing (%)") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Now we will show how substituting '' with NA the 2 analysis will be instead the same
+```{r}
+columns_to_check <- c("DISTRICT", "UCR_PART", "STREET", "SHOOTING")
+crimes <- crimes %>%
+  mutate(across(all_of(columns_to_check), ~na_if(.x, "")))
+```
+
+```{r}
+missing_counts <- sapply(crimes, function(x) sum(is.na(x)))
+missing_counts_df <- data.frame(
+  Feature = names(missing_counts),
+  MissingCount = missing_counts
+)
+
+total_observations <- nrow(crimes)
+missing_counts_df <- missing_counts_df %>%
+  mutate(PercentageMissing = (MissingCount / total_observations) * 100)
+
+ggplot(missing_counts_df, aes(x = Feature, y = PercentageMissing)) +
+  geom_bar(stat = "identity", fill = "coral") +
+  theme_minimal() +
+  labs(title = "Percentage of Missing Values by Feature", x = "Feature", y = "Percentage Missing (%)") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+As it has been said now the 2 analysis shows the same result.
+The previous visualizations show that most features have a complete or near-complete set of values, except for the SHOOTING variable.   
+It is notable that the SHOOTING variable exhibits a significant number of missing values, accounting for 99.7% of its entries. The substantial amount of missing data implies that the field might be designed to document an incident exclusively when a shooting takes place, leaving other entries empty. 
+
+To address this and improve data integrity, we have substituted the missing values with 'N' to indicate instances where a shooting did not occur.
+```{r}
+crimes <- crimes %>%
+  mutate(SHOOTING = ifelse(is.na(SHOOTING), 'N', SHOOTING))
+```
+
+# EDA
+We will now do basic barplots to understand the distribution of our features of interest. Top 20 categories for each feature will be shown. Also the 5 least frequent categories will be printed to have an overview on the distribution of the feature.
+
+Let's start from one of the feature of main interest for us: Crime Group.
+```{r}
+top_categories <- crimes %>%
+  count(OFFENSE_CODE_GROUP) %>%
+  top_n(20, n) %>%
+  arrange(desc(n))
+
+ggplot(top_categories, aes(x = reorder(OFFENSE_CODE_GROUP, n), y = n)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +  
+  labs(title = "Top 20 Categories in OFFENSE_CODE_GROUP",
+       x = "OFFENSE_CODE_GROUP",
+       y = "Count") +
+  theme_minimal()
+
+least_frequent <- crimes %>%
+  count(OFFENSE_CODE_GROUP) %>%
+  arrange(n) %>%
+  head(5)
+
+# Print the result
+print(least_frequent)
+```
+The visualization reveals a wide range of crime types and frequencies. We observe a spectrum from common incidents like "Motor Vehicle Accidents," which occurred 37,070 times over the four years, to rare occurrences like "Human Trafficking" with only 7 incidents reported.
+As can be seen, the five offences with the most records in that year range are:
+1. Mothor vehicle accidents
+2. Larceny
+3. Medical Assistance
+4. Investigate Person
+5. Other
+
+```{r}
+top_categories <- crimes %>%
+  count(OFFENSE_NAME) %>%
+  top_n(20, n) %>%
+  arrange(desc(n))
+
+ggplot(top_categories, aes(x = reorder(OFFENSE_NAME, n), y = n)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +  
+  labs(title = "Top 20 Categories in OFFENSE_CODE_GROUP",
+       x = "OFFENSE_CODE_GROUP",
+       y = "Count") +
+  theme_minimal()
+
+top_categories <- crimes %>%
+  count(OFFENSE_DESCRIPTION) %>%
+  top_n(20, n) %>%
+  arrange(desc(n))
+
+ggplot(top_categories, aes(x = reorder(OFFENSE_DESCRIPTION, n), y = n)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +  
+  labs(title = "Top 20 Categories in OFFENSE_CODE_GROUP",
+       x = "OFFENSE_CODE_GROUP",
+       y = "Count") +
+  theme_minimal()
+```
+We can see that the 2 features give the same information with a slight difference in the count, however offense description has more easy understandable labels. Thus, we will focus the analysis on it.
+
+```{r}
+top_categories <- crimes %>%
+  filter(!is.na(DISTRICT)) %>%  # Exclude NA values
+  count(DISTRICT) %>%
+  top_n(20, n) %>%
+  arrange(desc(n))
+
+ggplot(top_categories, aes(x = reorder(DISTRICT, n), y = n)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Top 20 Districts by Crime Count",
+       x = "District",
+       y = "Count") +
+  theme_minimal()
+```
+District B2 has the most number of reported crimes while district A15 has the least number of reported crimes, but is the severity of the crimes different between district B2 and A15?
+
+To investigate this aspect, we analysed the type of crimes reported in both districts (Using UCR_PART column, which represents a statistical system developed in the United States to collect and analyse crime data where crimes are classified according to seriousness and range from very serious in Part One to less serious in Parts Two and Three.). 
+```{r}
+top_categories <- crimes %>%
+  filter(DISTRICT == 'B2', !is.na(UCR_PART)) %>%  
+  count(UCR_PART) %>%
+  top_n(20, n) %>%
+  arrange(desc(n))
+
+ggplot(top_categories, aes(x = reorder(UCR_PART, n), y = n)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +  
+  labs(title = "Top UCR Categories in District B2",
+       x = "UCR Part",
+       y = "Count") +
+  theme_minimal()
+
+top_categories <- crimes %>%
+  filter(DISTRICT == 'A15', !is.na(UCR_PART)) %>%  
+  count(UCR_PART) %>%
+  top_n(20, n) %>%
+  arrange(desc(n))
+
+ggplot(top_categories, aes(x = reorder(UCR_PART, n), y = n)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +  
+  labs(title = "Top UCR Categories in District A15",
+       x = "UCR Part",
+       y = "Count") +
+  theme_minimal()
+```
+From the graph, it turned out that district A15 had fewer 'Part Two' crimes than district B2. 
+While district B2 shows an overall higher volume of reported crimes in all categories, district A15 reveals a different proportion, with fewer 'Part Two' crimes. 
+
+```{r}
+top_categories <- crimes %>%
+  filter(!is.na(STREET)) %>%  # Exclude NA values
+  count(STREET) %>%
+  top_n(20, n) %>%
+  arrange(desc(n))
+
+ggplot(top_categories, aes(x = reorder(STREET, n), y = n)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +  
+  labs(title = "Top 20 STREET by Crime Count",
+       x = "STREET",
+       y = "Count") +
+  theme_minimal()
+```
+The street with most crimes is Washinton street. Now we want to further analyze street crimes analyzing in which street most shooting occurs.
+```{r}
+top_categories <- crimes %>%
+  filter(SHOOTING == 'Y', !is.na(STREET)) %>%  
+  count(STREET) %>%
+  top_n(20, n) %>%
+  arrange(desc(n))
+
+# Create the plot
+ggplot(top_categories, aes(x = reorder(STREET, n), y = n)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +  
+  labs(title = "Top 20 streets where shooting occurred",
+       x = "STREET",
+       y = "Count") +
+  theme_minimal()
+```
+Washington St' street has also the most reported crimes with shootings.
+
+## Temporal analysis
+
+```{r}
+ggplot(crimes, aes(x = YEAR)) +
+  geom_bar(stat = "count", fill = "cornflowerblue") +
+  labs(title = "Count of Crimes by Year", x = "Year", y = "Count of Crimes") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+The yearly count-plot of crimes indicates an uneven distribution across the years. The years 2017 and 2016 have almost double the number of crimes compared to 2015 and 2018. This disparity is attributable to the dataset's timeframe, which starts from June 14, 2015, and ends on September 3, 2018.
+
+```{r}
+ggplot(crimes, aes(x = MONTH)) +
+  geom_bar(stat = "count", fill = "cornflowerblue") +
+  labs(title = "Count of Crimes by MONTH", x = "MONTH", y = "Count of Crimes") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Examining crimes by month, we find that while the count hovers around 25,000 for most months, there is a noticeable peak in the summer months of June, July, and August, with counts exceeding 30,000. This pattern, however, is influenced by the dataset's timeframe, which includes an additional year of data for these months, starting from June 14, 2015, and ending on September 3, 2018.
+
+```{r}
+crimes$DAY_OF_WEEK <- factor(crimes$DAY_OF_WEEK, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
+
+ggplot(crimes, aes(x = DAY_OF_WEEK)) +
+  geom_bar(stat = "count", fill = "cornflowerblue") +
+  labs(title = "Count of Crimes by Day of the Week", x = "Day of the Week", y = "Count of Crimes") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+The daily countplot shows that Friday is the most crime-prone day of the week, whereas Sunday experiences the least criminal activity. This insight could reflect societal patterns and routines that vary throughout the week.
+
+```{r}
+ggplot(crimes, aes(x = HOUR)) +
+  geom_bar(stat = "count", fill = "cornflowerblue") +
+  labs(title = "Count of Crimes by Hour", x = "Hour", y = "Count of Crimes") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+The hourly distribution of crimes reveals that the highest number of incidents is recorded at 5 p.m., while 5 a.m. is the quietest hour. Generally, night hours tend to have fewer reported crimes, which might be related to the lower activity levels during these times.
+
+```{r}
+# Convert 'OCCURRED_ON_DATE' to Date format
+crimes$DATE <- as.Date(crimes$OCCURRED_ON_DATE)
+
+daily_crime_counts <- aggregate(list(Crime_Count = crimes$DATE), by = list(Date = crimes$DATE), FUN = length)
+
+ggplot(data = daily_crime_counts, aes(x = Date, y = Crime_Count)) +
+  geom_line() +  # Plot daily crime counts
+  geom_smooth(method = "loess", span = 0.2, color = "red", se = FALSE) +  # Add a LOESS trend line
+  labs(title = "Crimes by Date with Trend Line", x = "Date", y = "Number of Crimes") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+The time series plot of daily crimes highlights notable fluctuations in crime rates. Days vary considerably, ranging from 150 to over 350 crimes. A seasonal trend is apparent: crime rates decrease towards January, rise to a peak around July, and then diminish again. This pattern suggests a strong seasonal influence on crime trends in Boston, potentially linked to variations in social activities and environmental factors throughout the year.
+i
+
+*The more specific analysis on the dataset has been performed in python.*
