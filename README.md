@@ -42,7 +42,7 @@ The "Crimes in Boston" dataset is a valuable tool for:
 * Through this information, the dataset proves to be an important resource for researchers, data analysts, urban planners, and public safety policy makers, offering a comprehensive and essential view for understanding and addressing the challenges of urban crime in Boston.
 
 
-# The Analisis  
+# The Analisis  🔍
 In order to see the developed analysis on the dataset, we should clone the remote repository. A summary of the analysis performed can be summarized as:  
 *Data cleaning*  
 *EDA*  
